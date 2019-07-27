@@ -1,7 +1,7 @@
 ---
 title: "ILP Reserve Selection Model Tutorial"
 author: "Zack Oyafuso"
-date: "Updated 24 July 2019"
+date: "Updated 27 July 2019"
 output: html_document
 ---
 
@@ -21,7 +21,7 @@ library(RColorBrewer)
 ### Set working directory 
 Set your working directory to include domain.RData
 ```{r Set wd here}
-setwd("/Users/zackoyafuso/Desktop/ILP_Tutorial/")
+setwd("/Users/zackoyafuso/Google Drive/GitHub/ILP-Reserve_Selection_Model/")
 ```
 
 ### Load spatial domain
@@ -463,7 +463,8 @@ do_glpkAPI = function(
   t <- system.time({
     screen_out <- capture.output(glpkAPI::solveMIPGLPK(model))
   })
-  print(screen_out)
+  
+  #print(screen_out)
   
   # Extract lower bound from screen output
   if (is.na(bound)) {
@@ -531,11 +532,11 @@ plot(raster::rasterToPolygons(domain),
      add = T)
 ```
 
-Example Pareto Frontier
+### Example Pareto Frontier
 
-As an example, we can trace a Pareto Frontier under two objectives, conservation value (maximize) and opportunity cost (minimize) under fixed total area and compactness constraints. This is done by solving the ILP model under varying conservation constraints
+As an example, we can trace a Pareto Frontier under two objectives, conservation value (maximize) and opportunity cost (minimize) under fixed total area (A = 0.3) and compactness constraints. This is done by solving the ILP model under varying conservation constraints. The solutions are plotted below, color-coded by the compactness constraint.
 
-```{r}
+```{r, echo = F}
 res_df = data.frame()
 eps_spp = 0.01
 compactness_scen = c(0.01,0.75,1)
@@ -577,7 +578,7 @@ for(b in 1:length(compactness_scen)){
 }
 ```
 
-```{r}
+```{r, echo = F}
 plot(cost ~ spp, data = res_df, subset = (B == 0.01),
      pch = 16, las = 1, type = 'b',
      xlab = 'Conservation Value', ylab = 'Opportunity Cost',
