@@ -1,0 +1,123 @@
+---
+title: "ILP tutorial using gurobi"
+author: "Zack Oyafuso"
+date: "7/24/2019"
+output: html_document
+---
+
+This is an Integer Linear Programming (ILP) reserve selection model using commercial software Gurobi as the optimizer. Academic licenses are free as of this writing, so please use this 
+
+```{r libraries}
+library(gurobi)
+```
+
+### Set working directory with RData file
+```{r Set wd here}
+setwd("/Users/zackoyafuso/Desktop/ILP_Tutorial/")
+```
+
+```{r Gurobi Model}
+###########################################
+## Function to conduct ILP problem using Gurobi
+###########################################
+do_gurobi = function(
+  opp_cost = rep(1, n_pus),
+  spp_2km,
+  area_constraint = 0.3,
+  species_constraint = 0.05,
+  boundary_constraint = 0.05,
+  gap = 0.05,
+  time_limit = 3600, #in seconds
+  print_output = T,
+  n_threads = 1)
+{
+  
+  #The objective function (in this case total area as opportunity cost) is a vector with length of the number of decison variables. We have M decision variables that we don't need in the objective function value, so while we need to include them, their coefficient values are set to zero so they don't contribute to the objective function value.
+  objvals <- c(opp_cost, rep(0, M))
+  
+  # Add area constraint
+  cr = cr + 1
+  mr = c(mr, rep(cr, (z-1) ) )
+  mc = c(mc, 1:(z-1) )
+  mz = c(mz, rep(1, n_pus) , rep(0, (z-1) - n_pus) )
+  sense = c(sense, '<=')
+  rhs = c(rhs, area_constraint * n_pus)
+  
+  ## Species Representation, horizontal reading frame
+  cr = cr + 1
+  mr = c(mr, rep(cr, (z-1)))
+  mc = c(mc, 1:(z-1) )
+  mz = c(mz, na.omit(values(spp_2km)) , rep(0, M) );
+  sense = c(sense, '>=')
+  rhs = c(rhs, species_constraint*sum(values(spp_2km), na.rm = T) )
+  
+  ## Spatial Compactness
+  cr = cr + 1
+  mr = c(mr, rep(cr, (z-1)))
+  mc = c(mc, 1:(z-1))
+  mz = c(mz, rep(0, n_pus),  rep(1, M))
+  sense = c(sense, '>=')
+  rhs = c(rhs, M*boundary_constraint )
+  
+  ## Construct Sparse Constraint Matrix
+  constr = sparseMatrix(i=mr, 
+                        j=mc, 
+                        x=mz)
+  
+  #Characteristics of the LP model is defined using a named list
+  model = list(
+    # Function Minimization or Maximization?
+    modelsense = "min",
+    
+    # set all decision variables as binary:
+    vtype = "B",
+    
+    # vector of state values that are being minimised (costs in our example):
+    obj = objvals,
+    
+    # constraints matrix, and right hand side and sense vectors:
+    A = constr,
+    rhs = rhs,
+    sense = sense
+  )
+  
+  # set the parameters that control the algorithm (the algorithm stops when
+  # a gap of 0.5% is achieved in this example):
+  params = list(Presolve=2, 
+                MIPGap=gap, 
+                TimeLimit=time_limit, 
+                threads = n_threads, 
+                OutputFlag = as.numeric(print_output) )
+  # solve the problem
+  result = gurobi(model,
+                  params)
+  
+  return(result)
+}
+
+res_gurobi = do_gurobi(opp_cost = as.numeric(na.omit(values(mean_effort))),
+                       spp_2km = spp_2km, 
+                       area_constraint = 0.30, 
+                       species_constraint = 0.3,
+                       boundary_constraint = 0.20, 
+                       gap = 0.01
+)
+
+```
+
+```{r}
+chosen_pus_gurobi = which(res_gurobi$x[1:n_pus] == 1)
+sum(na.omit(values(mean_effort))[chosen_pus_gurobi])
+
+length(chosen_pus_gurobi) / n_pus
+sum(na.omit(values(spp_2km))[chosen_pus_gurobi]) / sum(values(spp_2km), na.rm = T)
+
+sum(res_gurobi$x[-1*c(1:n_pus)]) / M
+```
+
+```{r}
+old_idx = as.numeric(names(new_idx)[chosen_pus_gurobi])
+temp = domain
+values(temp)[old_idx] = 2
+plot(temp)
+```
