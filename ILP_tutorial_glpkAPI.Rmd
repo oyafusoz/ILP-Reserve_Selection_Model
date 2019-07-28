@@ -5,8 +5,6 @@ date: "Updated 27 July 2019"
 output: html_document
 ---
 
-This is a supplemental vignette for Oyafuso et al. (In Review) . This method is also used in Oyafuso et al. (2019). Code and techniques from other workers are used in this script. Please refer to Beyer et al. (2016) for the linearization of the compactness term used in their paper to linearize the boundary length term in the Marxan objective function. Also see M. Strimas-Mackey's article entitled, "Field Guide to ILP Solvers in R for Conservation Prioritization," on his gitHub account for the setup of the solver.
-
 ### Import necessary libraries (install if needed)
 ```{r Import Libraries, message = F}
 library(kableExtra)
@@ -44,14 +42,15 @@ The raster `domain` has **`r nc`** columns and **`r nr`** rows. Of the **`r N`**
 
 ### Data Layers
 This is what the spatial domain looks like at 2 km resolution. The brown cells are the PUs and the unfilled cells are cells in the domain of the raster but not included in the analysis. The two other major data layers are the opportunity cost and species (or conservation) layers.
-```{r plot data layers, echo = F}
+```{r plot data layers, echo = F, fig.height = 7, fig.width = 9}
 ##Plot Spatial Domain
 full_domain = domain
 values(full_domain)[is.na(values(full_domain))] = 1
 
-par(mar = c(0,0,0,0))
+par(mar = c(0,0,0,0), mfrow = c(2,2))
+plot(full_domain, col = 'white', axes = F, legend = F)
 plot(raster::rasterToPolygons(full_domain),
-     border = 'grey')
+     border = 'grey', add = T)
 
 plot(raster::rasterToPolygons(domain), 
      axes = F,
@@ -66,7 +65,6 @@ text(x = mean(domain@extent[1:2]),
 full_domain = domain
 values(full_domain)[is.na(values(full_domain))] = 1
 
-par(mar = c(0,0,0,0))
 plot(mean_effort, axes = F, col = brewer.pal(9, 'Greens'))
 
 plot(raster::rasterToPolygons(domain), add = T, border = 'darkgrey')
@@ -84,7 +82,7 @@ text(x = mean(domain@extent[1:2]),
      "Conservation\nFeature Layer", cex = 2)
 ```
 
-### Spatial Compactness Objective
+### Cell Neighbors
 The compactness objective is defined as the total number of adjacent chosen PUs.  This entails calculating the cardinal PU neighbors for each PU. One way to do this is to calculate whether a planning unit is a corner, edge, or inner cell on the raster domain. Depending on the type of cell, its neighbors can be correctly calculated. The cells are indexed in a horizontal reading frame. Then for each PU, we calcualte the adjacent neighboring planning units. This information is stored in a matrix called `neighbor_matrix` with `r n_pus` rows and 4 columns (for each cardinal direction). 
 
 ```{r Cell Type, echo = F }
@@ -203,7 +201,7 @@ kable(head(df)) %>% kable_styling()
 ```
 
 ### Objective Functions
-We define two objective functions first, opportunity cost and conservation value. 
+We first define two objective functions, opportunity cost and conservation value:
 $$ 
 argmin 
 \begin{equation}
@@ -218,21 +216,21 @@ argmax
 \end{equation}
 $$
 
-$x_i$: binary decision variable, 1 if $i^{th}$ PU is chosen, 0 otherwise.
+$x_i$: binary decision variable, $1$ if $i^{th}$ PU is chosen, $0$ otherwise.
 
 $c_i$: opportunity cost of the $i^{th}$ PU.
 
 $r_i$: conservation value of the $i^{th}$ PU.
 
-Total area is often as a target decided a priori. We specify this constraint using an inequality and maximum total area ($A$):
+Total area is often as a target decided a priori. We specify this constraint using an inequality and maximum proportion of the total area of the spatial domain ($A$):
 
 $$ s.t.
 \begin{equation}
-\sum_{i=1}^{N} x_i \leq A
+\sum_{i=1}^{N} x_i \leq AN
 \end{equation}
 $$
 
-At this point, there are **`r n_pus`** decision variables. The compactness objective is an inherently non-linear process, as it involves the interactions of PUs. A few steps are added to linearize the compactness objective. First, we introduce a new binary decision variable, $z_{ij}$ denoting the selection of adjacent cells $i$ and $j$. There are a total of $M$ cell adjacencies in the spatial domain while $E$ comprises the set of neighboring planning units. Thus, the compactness objective is defined as: 
+At this point, there are **`r n_pus`** decision variables. The compactness objective is an inherently non-linear relationship, as it involves the interactions of PUs. A few steps are added to linearize the compactness objective. First, we introduce a new binary decision variable, $z_{ij}$ denoting the selection of adjacent cells $i$ and $j$. There are a total of $M$ cell adjacencies in the spatial domain while $E$ comprises the set of neighboring planning units. Thus, the compactness objective is defined as: 
 
 $$ argmax
 \begin{equation}
