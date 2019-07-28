@@ -232,7 +232,15 @@ $$ s.t.
 \end{equation}
 $$
 
-At this point, we have **`r n_pus`** decision variables. The compactness objective is an inherently non-linear process, as it involves the interactions of PUs. A few steps are added to linearize the compactness objective. First, we introduce a new binary decision variable, $z_{ij}$ denoting the selection of adjacent cells $i$ and $j$. There are a total of $M$ cell adjacencies. We also need to add three constraints to make sure that if $z_{ij}$ is chosen (i.e., $z_{ij} = 1$), $x_i$ and $x_j$ are chosen as well (i.e., $x_i = x_j = 1$), and vice versa:
+At this point, there are **`r n_pus`** decision variables. The compactness objective is an inherently non-linear process, as it involves the interactions of PUs. A few steps are added to linearize the compactness objective. First, we introduce a new binary decision variable, $z_{ij}$ denoting the selection of adjacent cells $i$ and $j$. There are a total of $M$ cell adjacencies in the spatial domain while $E$ comprises the set of neighboring planning units. Thus, the compactness objective is defined as: 
+
+$$ argmax
+\begin{equation}
+\sum_{(i,j)\in E} b_{ij}
+\end{equation}
+$$
+
+We also need to add three constraints to make sure that if $z_{ij}$ is chosen (i.e., $z_{ij} = 1$), $x_i$ and $x_j$ are chosen as well (i.e., $x_i = x_j = 1$), and vice versa:
 
 1) $z_{ij} - x_i \leq 0$
 2) $z_{ij} - x_j \leq 0$
