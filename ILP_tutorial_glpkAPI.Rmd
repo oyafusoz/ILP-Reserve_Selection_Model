@@ -1,8 +1,9 @@
 ---
 title: "ILP Reserve Selection Model Tutorial"
-author: "Zack Oyafuso"
+author: "XXX"
 date: "Updated 27 July 2019"
-output: html_document
+always_allow_html: yes
+output: pdf_document
 ---
 
 ### Import necessary libraries (install if needed)
@@ -257,9 +258,9 @@ mc = mr = mz = sense = rhs = c()
 ## index for the vectors of the sparse constraints matrix
 idx = 1
 # index for the current row (cr)
-cr = 1
+cr = 0
 # index for the zth added boundary decision variable
-z = n_pus+1
+z = n_pus
 
 M = 0 #cumulative number of cell interactions
 
@@ -276,6 +277,10 @@ for (i in 1:n_pus){ #for each true pu
   M = M + length(unique_ids)
   
   for (j in 1:length(unique_ids)){ #for each of the neighbors
+    
+    #Update current row index, number of decision variables
+    cr = cr + 1
+    z = z + 1
     
     # First constraint: z_ij - x_i <= 0
     mc[idx] <- i       #ith pu
@@ -319,12 +324,8 @@ for (i in 1:n_pus){ #for each true pu
     
     sense[cr] = '>='   #Switch equality to >=
     rhs[cr]   = -1     
-    
-    cr <- cr + 1       #Next row (constraint)
-    z <- z + 1         #Next column (i.e., decison variable)
   }
 }
-cr = cr - 1
 ```
 
 #### Double-Check
@@ -337,8 +338,10 @@ To double check, the constraint matrix at this point should have number of rows 
 There should be n_pus + M columns (`r n_pus` planning units plus `r M` adjacencies)
 
 ```{r}
+z == n_pus + M
 n_pus+M == max(mc)
 ```
+
 # Solving the ILP model
 ```{r}
 do_glpkAPI = function(
@@ -346,8 +349,7 @@ do_glpkAPI = function(
   species_constraint = 0.2,
   boundary_constraint = 0.2,
   gap = 0.01,
-  time_limit = Inf,
-  bound = NA
+  time_limit = Inf
 ){
   ################################
   ## Model Setup
@@ -355,43 +357,37 @@ do_glpkAPI = function(
   # Opportunity Cost Vector. Because the length of the decision variable
   # vector is n_pus + M, the coefficients for the objective values consist of
   # the opportunity cost for each of the PUs, concatenated with a zero vector
-  # of length M will not interact with the value of the objective function.
+  # of length M which will not interact with the value of the objective function
   objvals = c(df$cost, rep(0, M))
   
   # Add total area constraint to the constraint matrix
   cr = cr + 1 #Start a new row/constraint
-  mr = c(mr, rep(cr, (z-1) ) )
-  mc = c(mc, 1:(z-1) ) 
+  mr = c(mr, rep(cr, (z) ) )
+  mc = c(mc, 1:z ) 
   mz = c(mz, 
-         rep(1, n_pus) , #each PU has the same area
-         rep(0, (z-1) - n_pus) #zeros for the z_ijs
+         rep(1, n_pus), #each PU has the same area
+         rep(0, M) #zeros for the z_ijs
   )
   
   # Add total conservation value constraint to the constraint matrix 
   cr = cr + 1 #Start a new row/constraint
-  mr = c(mr, rep(cr, (z-1)))
-  mc = c(mc, 1:(z-1) )
+  mr = c(mr, rep(cr, z))
+  mc = c(mc, 1:z )
   mz = c(mz, df$spp, # conservation value of each PU
          rep(0, M)   # zeros for the z_ij's
   )
   
   # Add a total spatial compactness constraint to the constraint matrix 
   cr = cr + 1 #Start a new row/constraint
-  mr = c(mr, rep(cr, (z-1)))
-  mc = c(mc, 1:(z-1))
+  mr = c(mr, rep(cr, z ))
+  mc = c(mc, 1:z )
   mz = c(mz, rep(0, n_pus),  # zeros for the x_i's
          rep(1, M)           # ones for the z_ijs
   )
   
-  # Create the sparse constraint matrix
-  rij = sparseMatrix(i=mr, 
-                     j=mc, 
-                     x=mz)
-  
   ##############################
   ## Defining the Model
   ###############################
-  
   # Initialize Model
   model <- glpkAPI::initProbGLPK()
   
@@ -443,9 +439,9 @@ do_glpkAPI = function(
   # "2" refers to a variable with a lower bound and 
   # "3" refers a variable with an upper bound
   bound_type = c(rep(c(3,3,2), times = M),
-                 3,
-                 2,
-                 2)
+                 3, #area has an upper bound
+                 2, #conservation value has a lower bound
+                 2) #compactness has a lower bound
   
   glpkAPI::setRowsBndsGLPK(lp = model, 
                            i = seq_along(upper),
@@ -454,39 +450,30 @@ do_glpkAPI = function(
   
   # Presolve and automatically calculate relaxed solution
   # otherwise glpkAPI::solveSimplexGLPK(model) must be called first
-  glpkAPI::setMIPParmGLPK(PRESOLVE, GLP_ON)
-  glpkAPI::setMIPParmGLPK(MSG_LEV, GLP_MSG_ALL)
+  glpkAPI::setMIPParmGLPK(parm = PRESOLVE, val = GLP_ON)
+  glpkAPI::setMIPParmGLPK(parm = MSG_LEV, val = GLP_MSG_ALL)
   
-  # Gap to optimality
-  glpkAPI::setMIPParmGLPK(MIP_GAP , gap)
+  # Set the maximum optimality gap of the solution
+  glpkAPI::setMIPParmGLPK(parm = MIP_GAP, val = gap)
   
   # Stop after specified number of seconds, convert to milliseconds
   if (is.finite(time_limit)) {
-    glpkAPI::setMIPParmGLPK(TM_LIM, 1000 * time_limit)
+    glpkAPI::setMIPParmGLPK(parm = TM_LIM, val = 1000 * time_limit)
   }
   
-  # Solve Model
-  t <- system.time({
-    screen_out <- capture.output(glpkAPI::solveMIPGLPK(model))
-  })
-  
-  #print(screen_out)
-  
-  # Extract lower bound from screen output
-  if (is.na(bound)) {
-    bound <- stringr::str_subset(screen_out, "^\\+")
-    bound <- stringr::str_subset(bound, ">=\\s+(-?[+.e0-9]+)")
-    bound <- stringr::str_match(bound, ">=\\s+(-?[+.e0-9]+)")
-    bound <- ifelse(nrow(bound) > 0, as.numeric(bound[nrow(bound), 2]), NA)
-  }
-  
-  # Prepare return object
+  #############################
+  ## Solve Model
+  #############################
+  t <- system.time({ screen_out = glpkAPI::solveMIPGLPK(lp = model) })
+
+  #############################
+  ## Prepare return object
+  #############################
   results <- list(time = summary(t)[["user"]],
                   output_code = screen_out,
-                  x = glpkAPI::mipColsValGLPK(model),
+                  status = glpkAPI::return_codeGLPK(screen_out),
                   objval = glpkAPI::mipObjValGLPK(model),
-                  objbound = bound,
-                  gap = (glpkAPI::mipObjValGLPK(model) / bound - 1))
+                  x = glpkAPI::mipColsValGLPK(model))
   
   #Delete model
   glpkAPI::delProbGLPK(lp = model)
@@ -502,7 +489,7 @@ res_glpkAPI = do_glpkAPI(area_constraint = 0.3,
                          species_constraint = 0.3,
                          boundary_constraint = 0.20,
                          gap = 0.01, 
-                         time_limit = Inf, bound = NA)
+                         time_limit = Inf)
 ```
 
 ### Result Check
@@ -554,16 +541,20 @@ for(b in 1:length(compactness_scen)){
                         boundary_constraint = A * compactness_scen[b],
                         species_constraint = temp_spp,
                         gap = 0.01, 
-                        time_limit = Inf, bound = NA)
+                        time_limit = 10)
   status = temp_res$output_code
   
-  while(!(status %in% c("[1] 10", "[1] 9") )){
+  while(!(status %in% 9:10)){ #10: unfeasible solution 
+                              #9:  time limit reached
+    
+    #Save results
     temp_chosen_pus = which(temp_res$x[1:n_pus] == 1)
     temp_spp = sum(df$spp[temp_chosen_pus]) / sum(df$spp)
     temp_objval = temp_res$objval
     temp_compact = sum(temp_res$x[-1*(1:n_pus)]) / M
     temp_t = temp_res$time
     
+    #Append to result dataframe
     res_df = rbind(res_df, 
                    data.frame('B' = compactness_scen[b],
                               'compact' = temp_compact,
@@ -571,14 +562,14 @@ for(b in 1:length(compactness_scen)){
                               'cost' = temp_objval,
                               'time' = temp_t))
     
+    #incremement the conservation value constraint
     temp_spp = temp_spp + eps_spp
     
     temp_res = do_glpkAPI(area_constraint = A, 
                           boundary_constraint = A * compactness_scen[b],
                           species_constraint = temp_spp,
                           gap = 0.01, 
-                          time_limit = 10, 
-                          bound = NA)
+                          time_limit = 10)
     status = temp_res$output_code
   }
 }
